@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="hero">
+  <div class="container">
+    <div class="eyebrow">Спортивный клуб · {{ hall_count }} зала · без лишнего глянца</div>
+    <h1>Здесь становятся<br><span>чемпионами</span></h1>
+    <p class="lead">Силовая зона, бойцовский зал, йога и пилатес. Выберите абонемент онлайн, запишитесь на занятие и приходите тренироваться.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#plans">Купить абонемент</a>
+      <a class="btn btn-ghost" href="#contact">Пробное занятие</a>
+    </div>
+  </div>
+</section>
+
+<section class="stats">
+  <div class="container">
+    <div class="stat"><b>1500 м²</b><span>Тренировочной площади</span></div>
+    <div class="stat"><b>60+</b><span>Тренажёров и снарядов</span></div>
+    <div class="stat"><b>07–23</b><span>Открыты ежедневно</span></div>
+  </div>
+</section>
+
+<section class="block" id="about">
+  <div class="container about">
+    <div>
+      <div class="section-head" style="margin-bottom:20px">
+        <h2>О <span>клубе</span></h2>
+      </div>
+      <p>Мы создали пространство для тех, кто устал от пафосных фитнес-центров. Здесь нет очередей к зеркалам ради селфи — здесь работают над результатом.</p>
+      <p>Профессиональное покрытие, мощная вентиляция, оборудование для силовых и функциональных тренировок и тренеры, которые следят за техникой и прогрессом каждого.</p>
+      <ul class="feature-list">
+        <li>Единый абонемент на все зоны и групповые занятия</li>
+        <li>Онлайн-запись на тренировки в личном кабинете</li>
+        <li>Заморозка абонемента, если нужно сделать паузу</li>
+      </ul>
+    </div>
+    <div class="about-photo">
+      {% if has_about_photo %}<img src="{{ url_for('static', filename='img/about.jpg') }}" alt="Зал клуба">
+      {% else %}Фото зала<br><span class="small">положите файл static/img/about.jpg</span>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="block" id="halls">
+  <div class="container">
+    <div class="section-head center"><h2>Наши <span>залы</span></h2>
+      <p>Каждая зона спроектирована под конкретные задачи.</p></div>
+    <div class="grid grid-3">
+      {% for h in halls %}
+      <div class="card hall-card">
+        <h3>{{ h.name }}</h3>
+        <p>{{ h.description }}</p>
+        <span class="tag">До {{ h.capacity }} человек</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="block" id="plans">
+  <div class="container">
+    <div class="section-head center"><h2>Выберите <span>абонемент</span></h2>
+      <p>Оплата картой онлайн или на ресепшене. Абонемент активируется сразу после оплаты.</p></div>
+    <div class="grid grid-4">
+      {% for p in plans %}
+      <div class="card plan {% if loop.index == 2 %}featured{% endif %}">
+        {% if loop.index == 2 %}<span class="badge">Популярный</span>{% endif %}
+        <h3>{{ p.name }}</h3>
+        <div class="price">{{ p.price|rub }}</div>
+        <div class="per">{{ (p.price / (p.duration_days / 30))|round|int|rub }} в месяц · {{ p.duration_days }} дн.</div>
+        <p>{{ p.description }}</p>
+        <a class="btn btn-primary btn-block" href="{{ url_for('buy', plan_id=p.id) }}">Купить</a>
+      </div>
+      {% else %}
+      <p class="muted">Тарифы скоро появятся.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="block" id="schedule">
+  <div class="container">
+    <div class="section-head center"><h2>Ближайшие <span>занятия</span></h2>
+      <p>Запись на занятия доступна клиентам с активным абонементом.</p></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Когда</th><th>Занятие</th><th>Зал</th><th>Тренер</th><th>Места</th></tr></thead>
+        <tbody>
+        {% for c in classes %}
+          <tr>
+            <td class="nowrap">{{ c.starts_at|date_ru }} · <b>{{ c.starts_at|time_ru }}</b></td>
+            <td>{{ c.title }}</td><td>{{ c.hall_name }}</td><td>{{ c.trainer_name }}</td>
+            <td>{{ c.max_places - c.booked }} из {{ c.max_places }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty">Расписание на ближайшую неделю пока не опубликовано.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p style="text-align:center;margin-top:24px"><a class="btn btn-ghost" href="{{ url_for('schedule') }}">Всё расписание и запись</a></p>
+  </div>
+</section>
+
+<section class="block" id="coaches">
+  <div class="container">
+    <div class="section-head center"><h2>Наши <span>тренеры</span></h2>
+      <p>Практикующие специалисты, а не теоретики по книжкам.</p></div>
+    <div class="grid grid-3">
+      {% for t in trainers %}
+      <div class="card coach">
+        <div class="avatar">{{ t.full_name[0] }}</div>
+        <h3>{{ t.full_name }}</h3>
+        <div class="spec">{{ t.specialization }}</div>
+        <p>{{ t.description }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="block" id="contact">
+  <div class="container">
+    <div class="section-head center"><h2>Запишитесь на <span>пробное занятие</span></h2>
+      <p>Оставьте контакты — администратор перезвонит и подберёт удобное время.</p></div>
+    <div class="card form-card">
+      <form method="post" action="{{ url_for('apply') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="honeypot" aria-hidden="true"><input name="website" tabindex="-1" autocomplete="off"></div>
+        <label for="a_name">Имя</label>
+        <input id="a_name" name="full_name" required minlength="2" maxlength="100" value="{{ g.user.name if g.user else '' }}">
+        <label for="a_phone">Телефон</label>
+        <input id="a_phone" name="phone" type="tel" required placeholder="+7 999 123-45-67">
+        <label for="a_msg">Комментарий (необязательно)</label>
+        <textarea id="a_msg" name="message" maxlength="500" placeholder="Например: интересует бокс, удобно по вечерам"></textarea>
+        <div class="form-actions"><button class="btn btn-primary btn-block" type="submit">Отправить заявку</button></div>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

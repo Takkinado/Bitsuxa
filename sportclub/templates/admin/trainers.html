@@ -1,0 +1,17 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar"><h1 class="page-title" style="margin:0">Тренеры</h1>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('admin.trainer_new') }}">+ Новый тренер</a></div>
+<div class="table-wrap"><table>
+  <thead><tr><th>ФИО</th><th>Специализация</th><th>Контакты</th><th>Занятий впереди</th><th>Статус</th><th></th></tr></thead><tbody>
+  {% for t in rows %}
+    <tr><td><b>{{ t.full_name }}</b></td><td>{{ t.specialization }}</td>
+      <td>{{ t.phone|phone }}<div class="muted small">{{ t.email }}</div></td><td>{{ t.future }}</td>
+      <td><span class="pill {{ 'pill-active' if t.is_active else 'pill-cancelled' }}">{{ 'Работает' if t.is_active else 'Скрыт' }}</span></td>
+      <td class="actions"><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.trainer_edit', emp_id=t.id) }}">Изменить</a>
+        <form method="post" action="{{ url_for('admin.trainer_toggle', emp_id=t.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm">{{ 'Скрыть' if t.is_active else 'Вернуть' }}</button></form></td></tr>
+  {% else %}<tr><td colspan="6" class="empty">Тренеров нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<h1 class="page-title">Обзор</h1>
+<p class="page-sub">Состояние клуба на {{ today_iso|date_ru }}.</p>
+<div class="stat-cards">
+  <div class="stat-card"><b>{{ stats.clients }}</b><span>Клиентов</span></div>
+  <div class="stat-card"><b>{{ stats.active }}</b><span>Активных абонементов</span></div>
+  <div class="stat-card"><b>{{ stats.frozen }}</b><span>Заморожено</span></div>
+  <div class="stat-card"><b>{{ stats.new_apps }}</b><span>Новых заявок</span></div>
+  <div class="stat-card"><b>{{ stats.classes }}</b><span>Занятий впереди</span></div>
+  <div class="stat-card"><b>{{ stats.revenue_month|rub }}</b><span>Выручка за месяц</span></div>
+  <div class="stat-card"><b>{{ stats.revenue|rub }}</b><span>Выручка всего</span></div>
+</div>
+
+<h3 class="section-title" style="margin-top:0">Ожидают подтверждения оплаты ({{ stats.pending }})</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Клиент</th><th>Тариф</th><th>Сумма</th><th></th></tr></thead><tbody>
+  {% for r in pending %}
+    <tr><td>{{ r.full_name }}<div class="muted small">{{ r.phone|phone }}</div></td>
+      <td>{{ r.plan_name }}</td><td>{{ r.amount|rub }}</td>
+      <td class="actions">
+        <form method="post" action="{{ url_for('admin.subscription_action', sub_id=r.id, action='confirm') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('admin.dashboard') }}">
+          <button class="btn btn-primary btn-sm">Подтвердить оплату</button></form>
+        <form method="post" action="{{ url_for('admin.subscription_action', sub_id=r.id, action='cancel') }}" data-confirm="Отменить заказ?">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('admin.dashboard') }}">
+          <button class="btn btn-danger btn-sm">Отменить</button></form>
+      </td></tr>
+  {% else %}<tr><td colspan="4" class="empty">Нет неоплаченных заказов.</td></tr>{% endfor %}
+</tbody></table></div>
+
+<h3 class="section-title">Новые заявки</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Дата</th><th>Имя</th><th>Телефон</th><th>Комментарий</th><th></th></tr></thead><tbody>
+  {% for a in apps %}
+    <tr><td class="nowrap">{{ a.created_at|dt_ru }}</td><td>{{ a.full_name }}</td><td class="nowrap">{{ a.phone|phone }}</td><td>{{ a.message or '' }}</td>
+      <td class="actions"><form method="post" action="{{ url_for('admin.application_action', app_id=a.id, action='process') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('admin.dashboard') }}">
+        <button class="btn btn-ghost btn-sm">Обработано</button></form></td></tr>
+  {% else %}<tr><td colspan="5" class="empty">Новых заявок нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

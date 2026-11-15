@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Мои занятия — {{ CLUB_NAME }}{% endblock %}
+{% block content %}
+<div class="container page">
+  <h1 class="page-title">Мои занятия</h1>
+  <p class="page-sub">{{ g.user.name }} · ближайшие занятия и записавшиеся клиенты.</p>
+  {% for c in classes %}
+  <div class="card" style="margin-bottom:18px">
+    <div class="toolbar" style="margin-bottom:8px">
+      <h3>{{ c.title }} <span class="muted small">· {{ c.hall_name }}</span></h3>
+      <span><b>{{ c.starts_at|dt_ru }}</b>
+        {% if c.status == 'cancelled' %}<span class="pill pill-cancelled">Отменено</span>
+        {% else %}<span class="muted small"> · записано {{ c.booked }} из {{ c.max_places }}</span>{% endif %}</span>
+    </div>
+    {% if attendees[c.id] and c.status == 'planned' %}
+      <ul style="list-style:none">{% for a in attendees[c.id] %}
+        <li class="muted">• {{ a.full_name }} <span class="small">{{ a.phone|phone }}</span></li>{% endfor %}</ul>
+    {% elif c.status == 'planned' %}<p class="muted small">Пока никто не записан.</p>{% endif %}
+  </div>
+  {% else %}<div class="card empty">Предстоящих занятий нет.</div>{% endfor %}
+
+  <div class="card form-card" style="margin-top:30px;margin-left:0">
+    <h3>Смена пароля</h3>
+    <form method="post" action="{{ url_for('change_password') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <label>Текущий пароль</label><input name="old_password" type="password" required>
+      <label>Новый пароль</label><input name="new_password" type="password" minlength="6" required>
+      <label>Повторите новый</label><input name="new_password2" type="password" minlength="6" required>
+      <div class="form-actions"><button class="btn btn-ghost btn-sm" type="submit">Изменить пароль</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

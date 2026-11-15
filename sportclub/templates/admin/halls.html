@@ -1,0 +1,14 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar"><h1 class="page-title" style="margin:0">Залы</h1>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('admin.hall_new') }}">+ Новый зал</a></div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Название</th><th>Вместимость</th><th>Занятий в расписании</th><th></th></tr></thead><tbody>
+  {% for h in rows %}
+    <tr><td><b>{{ h.name }}</b><div class="muted small">{{ h.description or '' }}</div></td><td>{{ h.capacity }}</td><td>{{ h.used }}</td>
+      <td class="actions"><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.hall_edit', hall_id=h.id) }}">Изменить</a>
+        {% if not h.used %}<form method="post" action="{{ url_for('admin.hall_delete', hall_id=h.id) }}" data-confirm="Удалить зал?">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-danger btn-sm">Удалить</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="4" class="empty">Залов нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

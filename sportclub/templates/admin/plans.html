@@ -1,0 +1,16 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar"><h1 class="page-title" style="margin:0">Тарифы</h1>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('admin.plan_new') }}">+ Новый тариф</a></div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Название</th><th>Срок</th><th>Цена</th><th>На сайте</th><th>Продано</th><th></th></tr></thead><tbody>
+  {% for p in rows %}
+    <tr><td><b>{{ p.name }}</b><div class="muted small">{{ p.description or '' }}</div></td><td>{{ p.duration_days }} дн.</td><td>{{ p.price|rub }}</td>
+      <td><span class="pill {{ 'pill-active' if p.is_active else 'pill-cancelled' }}">{{ 'Да' if p.is_active else 'Скрыт' }}</span></td>
+      <td>{{ p.used }}</td>
+      <td class="actions"><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.plan_edit', plan_id=p.id) }}">Изменить</a>
+        {% if not p.used %}<form method="post" action="{{ url_for('admin.plan_delete', plan_id=p.id) }}" data-confirm="Удалить тариф?">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-danger btn-sm">Удалить</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="empty">Тарифов нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

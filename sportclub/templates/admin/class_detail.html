@@ -1,0 +1,25 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar">
+  <div><h1 class="page-title" style="margin:0">{{ c.title }}</h1>
+    <p class="muted">{{ c.starts_at|dt_ru }} · {{ c.duration_min }} мин · {{ c.hall_name }} · {{ c.trainer_name }}
+      <span class="pill pill-{{ c.status }}">{{ 'По плану' if c.status == 'planned' else 'Отменено' }}</span></p></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.class_edit', class_id=c.id) }}">Изменить</a>
+    {% if c.status == 'planned' %}<form method="post" action="{{ url_for('admin.class_cancel', class_id=c.id) }}" data-confirm="Отменить занятие? Все записи клиентов тоже будут отменены.">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-danger btn-sm">Отменить занятие</button></form>{% endif %}
+    <form method="post" action="{{ url_for('admin.class_delete', class_id=c.id) }}" data-confirm="Удалить занятие?">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-danger btn-sm">Удалить</button></form>
+  </div>
+</div>
+<h3 class="section-title" style="margin-top:0">Записались: {{ attendees|length }} из {{ c.max_places }}</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Клиент</th><th>Телефон</th><th>Записан</th><th></th></tr></thead><tbody>
+  {% for a in attendees %}
+    <tr><td><a href="{{ url_for('admin.client_detail', client_id=a.client_id) }}">{{ a.full_name }}</a></td><td>{{ a.phone|phone }}</td><td>{{ a.created_at|dt_ru }}</td>
+      <td class="actions"><form method="post" action="{{ url_for('admin.booking_cancel', booking_id=a.booking_id) }}" data-confirm="Отменить запись клиента?">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-danger btn-sm">Убрать</button></form></td></tr>
+  {% else %}<tr><td colspan="4" class="empty">Пока никто не записан.</td></tr>{% endfor %}
+</tbody></table></div>
+<p style="margin-top:20px"><a href="{{ url_for('admin.classes') }}">← К расписанию</a></p>
+{% endblock %}

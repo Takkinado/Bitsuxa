@@ -1,0 +1,18 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<h1 class="page-title">Заявки с сайта</h1>
+<p class="page-sub">Посетители, оставившие контакты в форме «Пробное занятие».</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Дата</th><th>Имя</th><th>Телефон</th><th>Комментарий</th><th>Статус</th><th></th></tr></thead><tbody>
+  {% for a in rows %}
+    <tr><td class="nowrap">{{ a.created_at|dt_ru }}</td><td>{{ a.full_name }}</td><td class="nowrap">{{ a.phone|phone }}</td>
+      <td>{{ a.message or '' }}</td><td><span class="pill pill-{{ a.status }}">{{ 'Новая' if a.status == 'new' else 'Обработана' }}</span></td>
+      <td class="actions">
+        {% if a.status == 'new' %}<form method="post" action="{{ url_for('admin.application_action', app_id=a.id, action='process') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-ghost btn-sm">Обработано</button></form>{% endif %}
+        <form method="post" action="{{ url_for('admin.application_action', app_id=a.id, action='delete') }}" data-confirm="Удалить заявку?">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-danger btn-sm">Удалить</button></form>
+      </td></tr>
+  {% else %}<tr><td colspan="6" class="empty">Заявок пока нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

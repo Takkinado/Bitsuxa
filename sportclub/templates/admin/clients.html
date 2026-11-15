@@ -1,0 +1,24 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar">
+  <h1 class="page-title" style="margin:0">Клиенты</h1>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <form method="get"><input name="q" value="{{ term }}" placeholder="Поиск: ФИО, телефон, e-mail" style="width:260px">
+      <button class="btn btn-ghost btn-sm">Найти</button></form>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('admin.client_new') }}">+ Новый клиент</a>
+  </div>
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>ФИО</th><th>Телефон</th><th>E-mail</th><th>Абонемент</th><th>Регистрация</th><th></th></tr></thead><tbody>
+  {% for c in rows %}
+    <tr><td><a href="{{ url_for('admin.client_detail', client_id=c.id) }}">{{ c.full_name }}</a>
+        {% if not c.is_active %}<span class="pill pill-cancelled">заблокирован</span>{% endif %}</td>
+      <td class="nowrap">{{ c.phone|phone }}</td><td>{{ c.email }}</td>
+      <td>{% if c.sub_status %}<span class="pill pill-{{ c.sub_status }}">{{ SUB_STATUS[c.sub_status] }}</span>
+          {% if c.sub_end %}<span class="muted small"> до {{ c.sub_end|date_ru }}</span>{% endif %}
+          {% else %}<span class="muted">нет</span>{% endif %}</td>
+      <td>{{ c.registration_date|date_ru }}</td>
+      <td class="actions"><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.client_detail', client_id=c.id) }}">Открыть</a></td></tr>
+  {% else %}<tr><td colspan="6" class="empty">Клиенты не найдены.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

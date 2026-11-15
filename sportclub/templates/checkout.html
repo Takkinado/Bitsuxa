@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Оформление абонемента — {{ CLUB_NAME }}{% endblock %}
+{% block content %}
+<div class="container page">
+  <div class="card form-card wide">
+    <h1 class="page-title">Оформление</h1>
+    <h3>Абонемент «{{ plan.name }}»</h3>
+    <p class="muted">{{ plan.description }}</p>
+    <div class="order-summary">
+      <span class="muted">Срок действия: {{ plan.duration_days }} дн. с момента оплаты</span>
+      <b>{{ plan.price|rub }}</b>
+    </div>
+    <form method="post">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <label style="margin-top:0">Способ оплаты</label>
+      <label class="radio-card"><input type="radio" name="method" value="card" checked>
+        <span>Картой онлайн<small>Демо-режим: оплата проходит мгновенно, абонемент активируется сразу.</small></span></label>
+      <label class="radio-card"><input type="radio" name="method" value="cash">
+        <span>На ресепшене<small>Абонемент будет создан, а активирует его администратор после получения оплаты.</small></span></label>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Подтвердить заказ</button>
+        <a class="btn btn-ghost" href="{{ url_for('index') }}#plans">Назад</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Админ-панель — {{ CLUB_NAME }}{% endblock %}
+{% block content %}
+{% set ep = request.endpoint %}
+<div class="container admin-layout">
+  <aside class="sidebar">
+    <a href="{{ url_for('admin.dashboard') }}" class="{{ 'active' if ep == 'admin.dashboard' }}">Обзор</a>
+    <a href="{{ url_for('admin.applications') }}" class="{{ 'active' if ep.startswith('admin.application') }}">Заявки
+      {% if badge_apps %}<span class="count">{{ badge_apps }}</span>{% endif %}</a>
+    <a href="{{ url_for('admin.clients') }}" class="{{ 'active' if ep.startswith('admin.client') }}">Клиенты</a>
+    <a href="{{ url_for('admin.subscriptions') }}" class="{{ 'active' if ep.startswith('admin.subscription') }}">Абонементы
+      {% if badge_pay %}<span class="count">{{ badge_pay }}</span>{% endif %}</a>
+    <a href="{{ url_for('admin.plans') }}" class="{{ 'active' if ep.startswith('admin.plan') }}">Тарифы</a>
+    <a href="{{ url_for('admin.classes') }}" class="{{ 'active' if ep.startswith('admin.class') }}">Расписание</a>
+    <a href="{{ url_for('admin.trainers') }}" class="{{ 'active' if ep.startswith('admin.trainer') }}">Тренеры</a>
+    <a href="{{ url_for('admin.halls') }}" class="{{ 'active' if ep.startswith('admin.hall') }}">Залы</a>
+  </aside>
+  <div>{% block admin %}{% endblock %}</div>
+</div>
+{% endblock %}

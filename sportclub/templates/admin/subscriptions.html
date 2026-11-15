@@ -1,0 +1,29 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar">
+  <h1 class="page-title" style="margin:0">Абонементы</h1>
+  <div class="tabs">
+    <a href="{{ url_for('admin.subscriptions') }}" class="{{ 'on' if not status }}">Все</a>
+    {% for k, v in SUB_STATUS.items() %}<a href="{{ url_for('admin.subscriptions', status=k) }}" class="{{ 'on' if status == k }}">{{ v }}</a>{% endfor %}
+  </div>
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>№</th><th>Клиент</th><th>Тариф</th><th>Период</th><th>Оплата</th><th>Статус</th><th></th></tr></thead><tbody>
+  {% for s in rows %}
+    <tr><td>{{ s.id }}</td>
+      <td><a href="{{ url_for('admin.client_detail', client_id=s.client_id) }}">{{ s.full_name }}</a><div class="muted small">{{ s.phone|phone }}</div></td>
+      <td>{{ s.plan_name }}</td>
+      <td class="nowrap">{% if s.start_date %}{{ s.start_date|date_ru }} — {{ s.end_date|date_ru }}{% else %}—{% endif %}</td>
+      <td>{% if s.amount is not none %}{{ s.amount|rub }}<div class="muted small">{{ PAY_METHOD[s.method] }} · {{ PAY_STATUS[s.pay_status] }}</div>{% else %}—{% endif %}</td>
+      <td><span class="pill pill-{{ s.status }}">{{ SUB_STATUS[s.status] }}</span></td>
+      <td class="actions">
+        {% if s.status == 'pending' %}<form method="post" action="{{ url_for('admin.subscription_action', sub_id=s.id, action='confirm') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+          <button class="btn btn-primary btn-sm">Подтвердить оплату</button></form>{% endif %}
+        {% if s.status in ('pending','active','frozen') %}<form method="post" action="{{ url_for('admin.subscription_action', sub_id=s.id, action='cancel') }}" data-confirm="Отменить абонемент? Оплата будет помечена как возвращённая.">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+          <button class="btn btn-danger btn-sm">Отменить</button></form>{% endif %}
+      </td></tr>
+  {% else %}<tr><td colspan="7" class="empty">Нет абонементов.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

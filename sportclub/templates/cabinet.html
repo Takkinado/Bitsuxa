@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Личный кабинет — {{ CLUB_NAME }}{% endblock %}
+{% block content %}
+<div class="container page">
+  <h1 class="page-title">Личный кабинет</h1>
+  <p class="page-sub">{{ client.full_name }} · {{ g.user.email }}</p>
+
+  <div class="cols">
+    <div class="stack">
+      {# ---------- Текущий абонемент ---------- #}
+      {% if sub %}
+      <div class="card sub-card">
+        <span class="pill pill-{{ sub.status }}">{{ SUB_STATUS[sub.status] }}</span>
+        <div class="big" style="margin-top:10px">Абонемент «{{ sub.plan_name }}»</div>
+        <dl class="kv">
+          {% if sub.status == 'pending' %}
+            <dt>К оплате</dt><dd>{{ sub.plan_price|rub }} ({{ PAY_METHOD[sub.pay_method] }})</dd>
+          {% else %}
+            <dt>Действует</dt><dd>{{ sub.start_date|date_ru }} — {{ sub.end_date|date_ru }}</dd>
+            <dt>Оплата</dt><dd>{{ PAY_STATUS[sub.pay_status] }}, {{ sub.plan_price|rub }}</dd>
+          {% endif %}
+          {% if sub.status == 'frozen' %}<dt>Заморожен с</dt><dd>{{ sub.frozen_from|date_ru }}</dd>{% endif %}
+        </dl>
+        {% if sub.status == 'pending' %}
+          <p class="muted small">Оплатите абонемент на ресепшене — администратор подтвердит оплату, и абонемент станет активным.</p>
+        {% endif %}
+        <div class="form-actions" style="margin-top:8px">
+          {% if sub.status == 'active' %}
+            <form method="post" action="{{ url_for('subscription_action', sub_id=sub.id, action='freeze') }}"
+                  data-confirm="Заморозить абонемент? Ваши будущие записи на занятия будут отменены.">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button class="btn btn-ghost btn-sm" type="submit">Заморозить</button></form>
+          {% elif sub.status == 'frozen' %}
+            <form method="post" action="{{ url_for('subscription_action', sub_id=sub.id, action='unfreeze') }}">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button class="btn btn-primary btn-sm" type="submit">Разморозить</button></form>
+          {% elif sub.status == 'pending' %}
+            <form method="post" action="{{ url_for('subscription_action', sub_id=sub.id, action='cancel') }}"
+                  data-confirm="Отменить заказ абонемента?">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button class="btn btn-danger btn-sm" type="submit">Отменить заказ</button></form>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card">
+        <h3>У вас пока нет абонемента</h3>
+        <p style="margin:8px 0 18px">Выберите подходящий тариф, чтобы записываться на занятия.</p>
+        <a class="btn btn-primary" href="{{ url_for('index') }}#plans">Выбрать абонемент</a>
+      </div>
+      {% endif %}
+
+      {# ---------- Ближайшие записи ---------- #}
+      <div>
+        <h3 class="section-title" style="margin-top:0">Мои записи</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Когда</th><th>Занятие</th><th>Зал</th><th></th></tr></thead>
+          <tbody>
+          {% for b in upcoming %}
+            <tr>
+              <td class="nowrap">{{ b.starts_at|dt_ru }}</td>
+              <td>{{ b.title }}<div class="muted small">{{ b.trainer_name }}</div></td>
+              <td>{{ b.hall_name }}</td>
+              <td class="actions">
+                <form method="post" action="{{ url_for('cancel_booking', booking_id=b.booking_id) }}" data-confirm="Отменить запись?">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                  <button class="btn btn-danger btn-sm" type="submit">Отменить</button></form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">Записей нет. <a href="{{ url_for('schedule') }}">Открыть расписание</a></td></tr>
+          {% endfor %}
+          </tbody></table></div>
+      </div>
+
+      {# ---------- История ---------- #}
+      <div>
+        <h3 class="section-title">История абонементов</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>№</th><th>Тариф</th><th>Период</th><th>Сумма</th><th>Статус</th></tr></thead>
+          <tbody>
+          {% for h in history %}
+            <tr><td>{{ h.id }}</td><td>{{ h.plan_name }}</td>
+              <td class="nowrap">{% if h.start_date %}{{ h.start_date|date_ru }} — {{ h.end_date|date_ru }}{% else %}—{% endif %}</td>
+              <td>{{ h.amount|rub if h.amount is not none else '—' }}</td>
+              <td><span class="pill pill-{{ h.status }}">{{ SUB_STATUS[h.status] }}</span></td></tr>
+          {% else %}<tr><td colspan="5" class="empty">Пока пусто.</td></tr>{% endfor %}
+          </tbody></table></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <h3>Мои данные</h3>
+        <form method="post" action="{{ url_for('update_profile') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <label for="p_name">ФИО</label>
+          <input id="p_name" name="full_name" value="{{ client.full_name }}" required minlength="2" maxlength="100">
+          <label for="p_phone">Телефон</label>
+          <input id="p_phone" name="phone" type="tel" value="{{ client.phone|phone }}" required>
+          <p class="muted small" style="margin-top:10px">Клиент с {{ client.registration_date|date_ru }}</p>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">Сохранить</button></div>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Смена пароля</h3>
+        <form method="post" action="{{ url_for('change_password') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <label for="o">Текущий пароль</label><input id="o" name="old_password" type="password" required autocomplete="current-password">
+          <label for="n">Новый пароль</label><input id="n" name="new_password" type="password" minlength="6" required autocomplete="new-password">
+          <label for="n2">Повторите новый</label><input id="n2" name="new_password2" type="password" minlength="6" required autocomplete="new-password">
+          <div class="form-actions"><button class="btn btn-ghost btn-sm" type="submit">Изменить пароль</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

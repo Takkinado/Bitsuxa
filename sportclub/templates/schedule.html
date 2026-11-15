@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}Расписание — {{ CLUB_NAME }}{% endblock %}
+{% block content %}
+<div class="container page">
+  <h1 class="page-title">Расписание</h1>
+  <p class="page-sub">Занятия на ближайшие 14 дней.
+    {% if not g.user %}<a href="{{ url_for('login', next=request.path) }}">Войдите</a>, чтобы записаться.
+    {% elif g.user.role != 'client' %}Запись доступна только клиентам.{% endif %}</p>
+
+  {% for day, items in days.items() %}
+    <h3 class="day-title">{{ day|day_title }}</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Время</th><th>Занятие</th><th>Зал</th><th>Тренер</th><th>Места</th><th></th></tr></thead>
+        <tbody>
+        {% for c in items %}
+          {% set free = c.max_places - c.booked %}
+          <tr>
+            <td class="nowrap"><b>{{ c.starts_at|time_ru }}</b> <span class="muted small">· {{ c.duration_min }} мин</span></td>
+            <td>{{ c.title }}</td><td>{{ c.hall_name }}</td><td>{{ c.trainer_name }}</td>
+            <td><span class="seats {% if free == 0 %}none{% elif free <= 3 %}low{% endif %}">{{ free }} из {{ c.max_places }}</span></td>
+            <td class="actions">
+              {% if g.user and g.user.role == 'client' %}
+                {% if c.id in my %}
+                  <span class="pill pill-booked">Вы записаны</span>
+                {% elif problems[c.id] %}
+                  <button class="btn btn-ghost btn-sm" disabled title="{{ problems[c.id] }}">Записаться</button>
+                  <div class="muted small" style="max-width:240px;white-space:normal;margin-top:4px">{{ problems[c.id] }}</div>
+                {% else %}
+                  <form method="post" action="{{ url_for('book', class_id=c.id) }}">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                    <button class="btn btn-primary btn-sm" type="submit">Записаться</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="card empty">Расписание пока не опубликовано.</div>
+  {% endfor %}
+</div>
+{% endblock %}

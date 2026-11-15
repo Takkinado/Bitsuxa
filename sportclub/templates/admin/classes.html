@@ -1,0 +1,21 @@
+{% extends 'admin/base.html' %}
+{% block admin %}
+<div class="toolbar">
+  <h1 class="page-title" style="margin:0">Расписание</h1>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <div class="tabs"><a href="{{ url_for('admin.classes') }}" class="{{ 'on' if show != 'all' }}">Предстоящие</a>
+      <a href="{{ url_for('admin.classes', show='all') }}" class="{{ 'on' if show == 'all' }}">Все</a></div>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('admin.class_new') }}">+ Новое занятие</a>
+  </div>
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Когда</th><th>Занятие</th><th>Зал</th><th>Тренер</th><th>Записано</th><th>Статус</th><th></th></tr></thead><tbody>
+  {% for c in rows %}
+    <tr><td class="nowrap">{{ c.starts_at|dt_ru }}<div class="muted small">{{ c.duration_min }} мин</div></td>
+      <td><a href="{{ url_for('admin.class_detail', class_id=c.id) }}">{{ c.title }}</a></td>
+      <td>{{ c.hall_name }}</td><td>{{ c.trainer_name }}</td><td>{{ c.booked }} / {{ c.max_places }}</td>
+      <td><span class="pill pill-{{ c.status }}">{{ 'Идёт по плану' if c.status == 'planned' else 'Отменено' }}</span></td>
+      <td class="actions"><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.class_detail', class_id=c.id) }}">Открыть</a></td></tr>
+  {% else %}<tr><td colspan="7" class="empty">Занятий нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
