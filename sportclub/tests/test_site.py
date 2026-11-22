@@ -1,5 +1,5 @@
 import os, re, sys, tempfile
-os.environ["SPORTCLUB_DB"] = tempfile.mktemp(suffix=".db")
+os.environ["DB_BACKEND"] = "sqlite"; os.environ["SPORTCLUB_DB"] = tempfile.mktemp(suffix=".db")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app as A
 from db import _connect

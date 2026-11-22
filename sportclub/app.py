@@ -4,8 +4,7 @@
 """
 import os
 import secrets
-import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flask import (Flask, abort, flash, g, redirect, render_template, request,
                    session, url_for)
@@ -15,7 +14,8 @@ import logic
 from admin import bp as admin_bp
 from auth import (check_csrf, csrf_token, home_for, load_user, role_required,
                   safe_next)
-from db import (INSTANCE_DIR, close_db, get_db, init_db, q_all, q_one, q_val, tx)
+from db import (INSTANCE_DIR, IntegrityError, close_db, get_db, init_db, now_str, q_all, q_one,
+                q_val, tx)
 
 CLUB_NAME = "БИЦУХА"
 
@@ -152,7 +152,7 @@ def index():
         plans=q_all("SELECT * FROM plans WHERE is_active=1 ORDER BY duration_days"),
         classes=logic.upcoming_classes(days=7, limit=8),
         trainers=q_all(
-            "SELECT e.* FROM employees e JOIN users u ON u.id=e.user_id "
+            "SELECT e.* FROM employees AS e INNER JOIN users AS u ON u.id = e.user_id "
             "WHERE e.position='trainer' AND u.is_active=1 ORDER BY e.id"),
         hall_count=q_val("SELECT COUNT(*) FROM halls"),
         has_about_photo=os.path.exists(os.path.join(app.static_folder, "img", "about.jpg")),
@@ -172,12 +172,13 @@ def apply():
     elif not phone:
         flash("Введите корректный номер телефона, например +7 999 123-45-67.", "error")
     else:
-        dup = q_one("SELECT 1 FROM applications WHERE phone=? AND status='new' "
-                    "AND created_at > datetime('now','localtime','-10 minutes')", (phone,))
+        recent = (logic.now() - timedelta(minutes=10)).strftime(logic.DT_FMT)
+        dup = q_one("SELECT id FROM applications WHERE phone=? AND status='new' AND created_at > ?",
+                    (phone, recent))
         if not dup:
             get_db().execute(
-                "INSERT INTO applications(full_name, phone, message) VALUES (?,?,?)",
-                (name, phone, message or None))
+                "INSERT INTO applications(full_name, phone, message, status, created_at) VALUES (?,?,?, 'new', ?)",
+                (name, phone, message or None, now_str()))
         flash("Заявка принята! Администратор свяжется с вами в ближайшее время.", "success")
     return redirect(url_for("index") + "#contact")
 
@@ -234,12 +235,12 @@ def register():
             conn = get_db()
             try:
                 with tx(conn):
-                    uid = conn.execute(
-                        "INSERT INTO users(email, password_hash, role) VALUES (?,?, 'client')",
-                        (email, generate_password_hash(password))).lastrowid
-                    conn.execute("INSERT INTO clients(user_id, full_name, phone) VALUES (?,?,?)",
-                                 (uid, form["full_name"], phone))
-            except sqlite3.IntegrityError:
+                    uid = conn.insert(
+                        "INSERT INTO users(email, password_hash, role, is_active, created_at) "
+                        "VALUES (?,?, 'client', 1, ?)", (email, generate_password_hash(password), now_str()))
+                    conn.insert("INSERT INTO clients(user_id, full_name, phone, registration_date) VALUES (?,?,?,?)",
+                                (uid, form["full_name"], phone, date.today().isoformat()))
+            except IntegrityError:
                 flash("Не удалось создать аккаунт: такие данные уже есть в системе.", "error")
             else:
                 session.clear()
@@ -299,11 +300,11 @@ def buy(plan_id):
         try:
             with tx(conn):
                 if logic.live_subscription(g.user["client_id"]):
-                    raise sqlite3.IntegrityError("live subscription exists")
+                    raise ValueError("live subscription exists")
                 # Онлайн-оплата картой — демо-режим: платёж считается проведённым сразу.
                 logic.create_subscription(conn, g.user["client_id"], plan, method,
                                           paid=(method == "card"))
-        except sqlite3.IntegrityError:
+        except (ValueError, IntegrityError):
             flash("У вас уже есть неоконченный абонемент.", "error")
             return redirect(url_for("cabinet"))
         if method == "card":
@@ -324,17 +325,18 @@ def cabinet():
     cid = g.user["client_id"]
     client = q_one("SELECT * FROM clients WHERE id=?", (cid,))
     history = q_all(
-        "SELECT s.*, p.name AS plan_name, pay.amount, pay.status AS pay_status, pay.method "
-        "FROM subscriptions s JOIN plans p ON p.id=s.plan_id "
-        "LEFT JOIN payments pay ON pay.subscription_id=s.id "
+        "SELECT s.*, p.name AS plan_name, pay.amount AS amount, pay.status AS pay_status, pay.method AS method "
+        "FROM (subscriptions AS s INNER JOIN plans AS p ON p.id = s.plan_id) "
+        "LEFT JOIN payments AS pay ON pay.subscription_id = s.id "
         "WHERE s.client_id=? ORDER BY s.id DESC", (cid,))
     bookings = q_all(
         "SELECT b.id AS booking_id, b.status AS booking_status, c.*, "
         "       e.full_name AS trainer_name, h.name AS hall_name "
-        "FROM bookings b JOIN classes c ON c.id=b.class_id "
-        "JOIN employees e ON e.id=c.trainer_id JOIN halls h ON h.id=c.hall_id "
+        "FROM ((bookings AS b INNER JOIN classes AS c ON c.id = b.class_id) "
+        "INNER JOIN employees AS e ON e.id = c.trainer_id) "
+        "INNER JOIN halls AS h ON h.id = c.hall_id "
         "WHERE b.client_id=? AND b.status='booked' ORDER BY c.starts_at DESC", (cid,))
-    now_s = logic.now().strftime(logic.DT_FMT)
+    now_s = logic.now_s()
     return render_template(
         "cabinet.html", client=client, sub=logic.live_subscription(cid), history=history,
         upcoming=[b for b in bookings if b["starts_at"] >= now_s][::-1],
@@ -417,10 +419,14 @@ def book(class_id):
         if problem:
             flash(problem, "error")
         else:
-            conn.execute(
-                "INSERT INTO bookings(class_id, client_id) VALUES (?,?) "
-                "ON CONFLICT(class_id, client_id) DO UPDATE SET status='booked', "
-                "created_at=datetime('now','localtime')", (class_id, g.user["client_id"]))
+            # повторная запись после отмены переиспользует прежнюю строку (пара class_id+client_id уникальна)
+            updated = conn.execute(
+                "UPDATE bookings SET status='booked', created_at=? WHERE class_id=? AND client_id=?",
+                (now_str(), class_id, g.user["client_id"])).rowcount
+            if not updated or updated < 1:
+                conn.execute(
+                    "INSERT INTO bookings(class_id, client_id, status, created_at) VALUES (?,?, 'booked', ?)",
+                    (class_id, g.user["client_id"], now_str()))
             flash(f"Вы записаны: {cls['title']}, {dt_ru(cls['starts_at'])}.", "success")
     return redirect(request.form.get("back") if safe_next(request.form.get("back"))
                     else url_for("schedule"))
@@ -430,7 +436,7 @@ def book(class_id):
 @role_required("client")
 def cancel_booking(booking_id):
     row = q_one(
-        "SELECT b.id, c.starts_at FROM bookings b JOIN classes c ON c.id=b.class_id "
+        "SELECT b.id AS id, c.starts_at AS starts_at FROM bookings AS b INNER JOIN classes AS c ON c.id = b.class_id "
         "WHERE b.id=? AND b.client_id=? AND b.status='booked'",
         (booking_id, g.user["client_id"]))
     if row is None:
@@ -452,11 +458,11 @@ def cancel_booking(booking_id):
 def trainer_page():
     classes = q_all(
         logic.CLASS_SELECT + "WHERE c.trainer_id=? AND c.starts_at >= ? ORDER BY c.starts_at",
-        (g.user["employee_id"], logic.now().strftime(logic.DT_FMT)))
+        (g.user["employee_id"], logic.now_s()))
     attendees = {}
     for c in classes:
         attendees[c["id"]] = q_all(
-            "SELECT cl.full_name, cl.phone FROM bookings b JOIN clients cl ON cl.id=b.client_id "
+            "SELECT cl.full_name AS full_name, cl.phone AS phone FROM bookings AS b INNER JOIN clients AS cl ON cl.id = b.client_id "
             "WHERE b.class_id=? AND b.status='booked' ORDER BY cl.full_name", (c["id"],))
     return render_template("trainer.html", classes=classes, attendees=attendees)
 

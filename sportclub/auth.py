@@ -14,18 +14,20 @@ def load_user():
     uid = session.get("uid")
     if not uid:
         return
-    user = q_one(
-        "SELECT u.id, u.email, u.role, u.is_active, "
-        "       COALESCE(c.full_name, e.full_name) AS name, "
-        "       c.id AS client_id, e.id AS employee_id "
-        "FROM users u "
-        "LEFT JOIN clients c ON c.user_id = u.id "
-        "LEFT JOIN employees e ON e.user_id = u.id "
-        "WHERE u.id = ?", (uid,))
-    if user and user["is_active"]:
-        g.user = user
-    else:
+    user = q_one("SELECT id, email, role, is_active FROM users WHERE id = ?", (uid,))
+    if not user or not user["is_active"]:
         session.clear()
+        return
+    user["name"], user["client_id"], user["employee_id"] = None, None, None
+    if user["role"] == "client":
+        c = q_one("SELECT id, full_name FROM clients WHERE user_id = ?", (uid,))
+        if c:
+            user["client_id"], user["name"] = c["id"], c["full_name"]
+    else:
+        e = q_one("SELECT id, full_name FROM employees WHERE user_id = ?", (uid,))
+        if e:
+            user["employee_id"], user["name"] = e["id"], e["full_name"]
+    g.user = user
 
 
 def role_required(*roles):

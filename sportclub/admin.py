@@ -1,5 +1,4 @@
 """Панель администратора (/admin/...). Доступна только роли admin."""
-import sqlite3
 from datetime import timedelta
 
 from flask import (Blueprint, abort, flash, g, redirect, render_template, request,
@@ -8,7 +7,7 @@ from werkzeug.security import generate_password_hash
 
 import logic
 from auth import role_required
-from db import get_db, q_all, q_one, q_val, tx
+from db import IntegrityError, get_db, now_str, q_all, q_one, q_val, tx
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -25,7 +24,7 @@ def _badges():
     """Счётчики для бокового меню админки."""
     return dict(
         badge_apps=q_val("SELECT COUNT(*) FROM applications WHERE status='new'"),
-        badge_pay=q_val("SELECT COUNT(*) FROM subscriptions s JOIN payments p ON p.subscription_id=s.id "
+        badge_pay=q_val("SELECT COUNT(*) FROM subscriptions AS s INNER JOIN payments AS p ON p.subscription_id = s.id "
                         "WHERE s.status='pending' AND p.status='pending'"))
 
 
@@ -57,24 +56,25 @@ def to_int(name, default=None):
 def dashboard():
     month_start = logic.today().replace(day=1).isoformat()
     stats = dict(
-        clients=q_val("SELECT COUNT(*) FROM clients c JOIN users u ON u.id=c.user_id WHERE u.is_active=1"),
+        clients=q_val("SELECT COUNT(*) FROM clients AS c INNER JOIN users AS u ON u.id = c.user_id WHERE u.is_active=1"),
         active=q_val("SELECT COUNT(*) FROM subscriptions WHERE status='active'"),
         frozen=q_val("SELECT COUNT(*) FROM subscriptions WHERE status='frozen'"),
-        pending=q_val("SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.id=p.subscription_id "
+        pending=q_val("SELECT COUNT(*) FROM payments AS p INNER JOIN subscriptions AS s ON s.id = p.subscription_id "
                       "WHERE p.status='pending' AND s.status='pending'"),
         new_apps=q_val("SELECT COUNT(*) FROM applications WHERE status='new'"),
         classes=q_val("SELECT COUNT(*) FROM classes WHERE status='planned' AND starts_at >= ?",
-                      (logic.now().strftime(logic.DT_FMT),)),
+                      (logic.now_s(),)),
         revenue=q_val("SELECT SUM(amount) FROM payments WHERE status='paid'"),
         revenue_month=q_val("SELECT SUM(amount) FROM payments WHERE status='paid' AND paid_at >= ?",
                             (month_start,)),
     )
     pending = q_all(
-        "SELECT s.id, c.full_name, c.phone, pl.name AS plan_name, p.amount "
-        "FROM subscriptions s JOIN clients c ON c.id=s.client_id "
-        "JOIN plans pl ON pl.id=s.plan_id JOIN payments p ON p.subscription_id=s.id "
+        "SELECT s.id AS id, c.full_name AS full_name, c.phone AS phone, pl.name AS plan_name, p.amount AS amount "
+        "FROM ((subscriptions AS s INNER JOIN clients AS c ON c.id = s.client_id) "
+        "INNER JOIN plans AS pl ON pl.id = s.plan_id) "
+        "INNER JOIN payments AS p ON p.subscription_id = s.id "
         "WHERE s.status='pending' AND p.status='pending' ORDER BY s.id")
-    apps = q_all("SELECT * FROM applications WHERE status='new' ORDER BY id DESC LIMIT 5")
+    apps = q_all("SELECT * FROM applications WHERE status='new' ORDER BY id DESC")[:5]
     return render_template("admin/dashboard.html", stats=stats, pending=pending, apps=apps)
 
 
@@ -83,7 +83,7 @@ def dashboard():
 # ----------------------------------------------------------------------------
 @bp.route("/applications")
 def applications():
-    rows = q_all("SELECT * FROM applications ORDER BY (status='new') DESC, id DESC")
+    rows = q_all("SELECT * FROM applications ORDER BY status, id DESC")
     return render_template("admin/applications.html", rows=rows)
 
 
@@ -108,18 +108,18 @@ def application_action(app_id, action):
 @bp.route("/clients")
 def clients():
     term = request.args.get("q", "").strip()
-    sql = ("SELECT c.*, u.email, u.is_active, "
-           "  (SELECT status FROM subscriptions s WHERE s.client_id=c.id "
-           "   AND s.status IN ('pending','active','frozen')) AS sub_status, "
-           "  (SELECT end_date FROM subscriptions s WHERE s.client_id=c.id "
-           "   AND s.status IN ('pending','active','frozen')) AS sub_end "
-           "FROM clients c JOIN users u ON u.id=c.user_id ")
-    params = ()
-    if term:
-        sql += "WHERE c.full_name LIKE ? OR c.phone LIKE ? OR u.email LIKE ? "
-        like = f"%{term}%"
-        params = (like, f"%{''.join(ch for ch in term if ch.isdigit()) or term}%", like)
-    rows = q_all(sql + "ORDER BY c.id DESC", params)
+    rows = q_all(
+        "SELECT c.*, u.email AS email, u.is_active AS is_active, "
+        "  (SELECT s.status FROM subscriptions AS s WHERE s.client_id = c.id "
+        "   AND s.status IN ('pending','active','frozen')) AS sub_status, "
+        "  (SELECT s.end_date FROM subscriptions AS s WHERE s.client_id = c.id "
+        "   AND s.status IN ('pending','active','frozen')) AS sub_end "
+        "FROM clients AS c INNER JOIN users AS u ON u.id = c.user_id ORDER BY c.id DESC")
+    if term:                       # поиск в Python: LIKE в Access и SQLite ведут себя по-разному
+        t = term.lower()
+        digits = "".join(ch for ch in term if ch.isdigit())
+        rows = [r for r in rows if t in r["full_name"].lower() or t in r["email"].lower()
+                or (digits and digits in r["phone"])]
     return render_template("admin/clients.html", rows=rows, term=term)
 
 
@@ -160,10 +160,10 @@ def client_new():
         else:
             conn = get_db()
             with tx(conn):
-                uid = conn.execute("INSERT INTO users(email,password_hash,role) VALUES (?,?, 'client')",
-                                   (email, generate_password_hash(pw))).lastrowid
-                cid = conn.execute("INSERT INTO clients(user_id,full_name,phone) VALUES (?,?,?)",
-                                   (uid, v["full_name"], phone)).lastrowid
+                uid = conn.insert("INSERT INTO users(email,password_hash,role,is_active,created_at) "
+                                  "VALUES (?,?, 'client', 1, ?)", (email, generate_password_hash(pw), now_str()))
+                cid = conn.insert("INSERT INTO clients(user_id,full_name,phone,registration_date) VALUES (?,?,?,?)",
+                                  (uid, v["full_name"], phone, logic.today().isoformat()))
             flash("Клиент создан.", "success")
             return redirect(url_for("admin.client_detail", client_id=cid))
     return form_page("Новый клиент", _client_fields(v, new=True), url_for("admin.clients"), "Создать")
@@ -171,19 +171,20 @@ def client_new():
 
 @bp.route("/clients/<int:client_id>")
 def client_detail(client_id):
-    client = q_one("SELECT c.*, u.email, u.is_active FROM clients c JOIN users u ON u.id=c.user_id "
-                   "WHERE c.id=?", (client_id,))
+    client = q_one("SELECT c.*, u.email AS email, u.is_active AS is_active "
+                   "FROM clients AS c INNER JOIN users AS u ON u.id = c.user_id WHERE c.id=?", (client_id,))
     if client is None:
         abort(404)
     history = q_all(
-        "SELECT s.*, p.name AS plan_name, pay.amount, pay.status AS pay_status, pay.method "
-        "FROM subscriptions s JOIN plans p ON p.id=s.plan_id "
-        "LEFT JOIN payments pay ON pay.subscription_id=s.id WHERE s.client_id=? ORDER BY s.id DESC",
+        "SELECT s.*, p.name AS plan_name, pay.amount AS amount, pay.status AS pay_status, pay.method AS method "
+        "FROM (subscriptions AS s INNER JOIN plans AS p ON p.id = s.plan_id) "
+        "LEFT JOIN payments AS pay ON pay.subscription_id = s.id WHERE s.client_id=? ORDER BY s.id DESC",
         (client_id,))
     bookings = q_all(
-        "SELECT c.title, c.starts_at, c.status AS class_status, h.name AS hall_name, b.status "
-        "FROM bookings b JOIN classes c ON c.id=b.class_id JOIN halls h ON h.id=c.hall_id "
-        "WHERE b.client_id=? ORDER BY c.starts_at DESC LIMIT 15", (client_id,))
+        "SELECT c.title AS title, c.starts_at AS starts_at, c.status AS class_status, h.name AS hall_name, "
+        "b.status AS status "
+        "FROM (bookings AS b INNER JOIN classes AS c ON c.id = b.class_id) INNER JOIN halls AS h ON h.id = c.hall_id "
+        "WHERE b.client_id=? ORDER BY c.starts_at DESC", (client_id,))[:15]
     return render_template(
         "admin/client_detail.html", client=client, history=history, bookings=bookings,
         live=logic.live_subscription(client_id),
@@ -248,10 +249,10 @@ def client_sell(client_id):
         try:
             with tx(conn):
                 if logic.live_subscription(client_id):
-                    raise sqlite3.IntegrityError
+                    raise ValueError("live subscription exists")
                 logic.create_subscription(conn, client_id, plan, "cash", paid=True)
             flash(f"Абонемент «{plan['name']}» оформлен и активирован.", "success")
-        except sqlite3.IntegrityError:
+        except (ValueError, IntegrityError):
             flash("У клиента уже есть действующий или неоплаченный абонемент.", "error")
     return redirect(url_for("admin.client_detail", client_id=client_id))
 
@@ -262,10 +263,11 @@ def client_sell(client_id):
 @bp.route("/subscriptions")
 def subscriptions():
     status = request.args.get("status", "")
-    sql = ("SELECT s.*, c.full_name, c.phone, p.name AS plan_name, "
-           "       pay.amount, pay.status AS pay_status, pay.method "
-           "FROM subscriptions s JOIN clients c ON c.id=s.client_id JOIN plans p ON p.id=s.plan_id "
-           "LEFT JOIN payments pay ON pay.subscription_id=s.id ")
+    sql = ("SELECT s.*, c.full_name AS full_name, c.phone AS phone, p.name AS plan_name, "
+           "       pay.amount AS amount, pay.status AS pay_status, pay.method AS method "
+           "FROM ((subscriptions AS s INNER JOIN clients AS c ON c.id = s.client_id) "
+           "INNER JOIN plans AS p ON p.id = s.plan_id) "
+           "LEFT JOIN payments AS pay ON pay.subscription_id = s.id ")
     params = ()
     if status in ("pending", "active", "frozen", "expired", "cancelled"):
         sql += "WHERE s.status=? "
@@ -332,7 +334,7 @@ def _save_plan(plan_id=None):
         else:
             get_db().execute("INSERT INTO plans(name,duration_days,price,description,is_active) VALUES (?,?,?,?,?)",
                              (name, days, price, desc or None, active))
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return "Тариф с таким названием уже существует."
     return None
 
@@ -411,7 +413,7 @@ def _save_hall(hall_id=None):
         else:
             get_db().execute("INSERT INTO halls(name,capacity,description) VALUES (?,?,?)",
                              (name, cap, desc or None))
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return "Зал с таким названием уже существует."
     return None
 
@@ -463,10 +465,10 @@ def hall_delete(hall_id):
 @bp.route("/trainers")
 def trainers():
     rows = q_all(
-        "SELECT e.*, u.email, u.is_active, "
-        "  (SELECT COUNT(*) FROM classes c WHERE c.trainer_id=e.id AND c.status='planned' AND c.starts_at >= ?) AS future "
-        "FROM employees e JOIN users u ON u.id=e.user_id WHERE e.position='trainer' ORDER BY e.id",
-        (logic.now().strftime(logic.DT_FMT),))
+        "SELECT e.*, u.email AS email, u.is_active AS is_active, "
+        "  (SELECT COUNT(*) FROM classes AS c WHERE c.trainer_id = e.id AND c.status='planned' AND c.starts_at >= ?) AS future "
+        "FROM employees AS e INNER JOIN users AS u ON u.id = e.user_id WHERE e.position='trainer' ORDER BY e.id",
+        (logic.now_s(),))
     return render_template("admin/trainers.html", rows=rows)
 
 
@@ -513,8 +515,8 @@ def trainer_new():
         else:
             conn = get_db()
             with tx(conn):
-                uid = conn.execute("INSERT INTO users(email,password_hash,role) VALUES (?,?, 'trainer')",
-                                   (email, generate_password_hash(pw))).lastrowid
+                uid = conn.insert("INSERT INTO users(email,password_hash,role,is_active,created_at) "
+                                  "VALUES (?,?, 'trainer', 1, ?)", (email, generate_password_hash(pw), now_str()))
                 conn.execute("INSERT INTO employees(user_id,full_name,phone,position,specialization,description) "
                              "VALUES (?,?,?, 'trainer', ?,?)", (uid, data[0], data[1], data[2], data[3]))
             flash("Тренер добавлен.", "success")
@@ -551,13 +553,14 @@ def trainer_edit(emp_id):
 
 @bp.route("/trainers/<int:emp_id>/toggle", methods=["POST"])
 def trainer_toggle(emp_id):
-    emp = q_one("SELECT e.user_id, u.is_active FROM employees e JOIN users u ON u.id=e.user_id "
+    emp = q_one("SELECT e.user_id AS user_id, u.is_active AS is_active "
+                "FROM employees AS e INNER JOIN users AS u ON u.id = e.user_id "
                 "WHERE e.id=? AND e.position='trainer'", (emp_id,))
     if emp is None:
         abort(404)
     if emp["is_active"]:
         future = q_val("SELECT COUNT(*) FROM classes WHERE trainer_id=? AND status='planned' AND starts_at >= ?",
-                       (emp_id, logic.now().strftime(logic.DT_FMT)))
+                       (emp_id, logic.now_s()))
         if future:
             flash(f"У тренера есть будущие занятия ({future}). Сначала отмените или переназначьте их.", "error")
             return redirect(url_for("admin.trainers"))
@@ -572,9 +575,9 @@ def trainer_toggle(emp_id):
 @bp.route("/classes")
 def classes():
     show = request.args.get("show", "upcoming")
-    now_s = logic.now().strftime(logic.DT_FMT)
+    now_s = logic.now_s()
     if show == "all":
-        rows = q_all(logic.CLASS_SELECT + "ORDER BY c.starts_at DESC LIMIT 200")
+        rows = q_all(logic.CLASS_SELECT + "ORDER BY c.starts_at DESC")[:200]
     else:
         rows = q_all(logic.CLASS_SELECT + "WHERE c.starts_at >= ? ORDER BY c.starts_at", (now_s,))
     return render_template("admin/classes.html", rows=rows, show=show, now_s=now_s)
@@ -582,7 +585,7 @@ def classes():
 
 def _class_fields(v):
     trainers = [(r["id"], f"{r['full_name']} ({r['specialization']})") for r in q_all(
-        "SELECT e.* FROM employees e JOIN users u ON u.id=e.user_id "
+        "SELECT e.* FROM employees AS e INNER JOIN users AS u ON u.id = e.user_id "
         "WHERE e.position='trainer' AND u.is_active=1 ORDER BY e.full_name")]
     halls = [(r["id"], f"{r['name']} — до {r['capacity']} чел.") for r in q_all("SELECT * FROM halls ORDER BY name")]
     return [F("title", "Название занятия", value=v.get("title", ""), required=True),
@@ -602,7 +605,7 @@ def _save_class(class_id=None):
     duration, places, start = to_int("duration_min"), to_int("max_places"), logic.parse_form_dt(s("starts_at"))
     if not title or len(title) > 100:
         return "Укажите название занятия."
-    trainer = q_one("SELECT e.id FROM employees e JOIN users u ON u.id=e.user_id "
+    trainer = q_one("SELECT e.id AS id FROM employees AS e INNER JOIN users AS u ON u.id = e.user_id "
                     "WHERE e.id=? AND e.position='trainer' AND u.is_active=1", (trainer_id,))
     hall = q_one("SELECT * FROM halls WHERE id=?", (hall_id,))
     if trainer is None or hall is None:
@@ -629,8 +632,8 @@ def _save_class(class_id=None):
         get_db().execute("UPDATE classes SET title=?,trainer_id=?,hall_id=?,starts_at=?,duration_min=?,max_places=? "
                          "WHERE id=?", (title, trainer_id, hall_id, stamp, duration, places, class_id))
     else:
-        get_db().execute("INSERT INTO classes(title,trainer_id,hall_id,starts_at,duration_min,max_places) "
-                         "VALUES (?,?,?,?,?,?)", (title, trainer_id, hall_id, stamp, duration, places))
+        get_db().execute("INSERT INTO classes(title,trainer_id,hall_id,starts_at,duration_min,max_places,status) "
+                         "VALUES (?,?,?,?,?,?, 'planned')", (title, trainer_id, hall_id, stamp, duration, places))
     return None
 
 
@@ -674,8 +677,9 @@ def class_detail(class_id):
     if cls is None:
         abort(404)
     attendees = q_all(
-        "SELECT b.id AS booking_id, cl.id AS client_id, cl.full_name, cl.phone, b.created_at "
-        "FROM bookings b JOIN clients cl ON cl.id=b.client_id "
+        "SELECT b.id AS booking_id, cl.id AS client_id, cl.full_name AS full_name, cl.phone AS phone, "
+        "b.created_at AS created_at "
+        "FROM bookings AS b INNER JOIN clients AS cl ON cl.id = b.client_id "
         "WHERE b.class_id=? AND b.status='booked' ORDER BY b.created_at", (class_id,))
     return render_template("admin/class_detail.html", c=cls, attendees=attendees)
 
